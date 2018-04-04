@@ -9,7 +9,7 @@
   -->
 
   <!-- Microstain sensor node -->
-   <node name="microstrain_3dm_gx5_25_node.py"
+   <node name="microstrain_3dm_gx5_25_node"
    pkg="microstrain_3dm_gx5_45"
    type="microstrain_3dm_gx5_25_node" output="screen">
 
