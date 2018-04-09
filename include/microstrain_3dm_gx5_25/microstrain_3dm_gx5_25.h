@@ -138,7 +138,7 @@ namespace Microstrain
    ros::Publisher status_pub_;
    std_msgs::Int16MultiArray status_msg_;
    std::string imu_frame_id_;
-
+   bool tf_ned_to_enu_;
    //Complementary Filter
    ros::Publisher cf_pub_;
    bool publish_cf_;
@@ -147,7 +147,6 @@ namespace Microstrain
 
    //EKF Filter
    ros::Publisher ekf_pub_;
-   bool publish_ekf_;
    int ekf_rate_;
    sensor_msgs::Imu ekf_imu_msg_;
 
