@@ -37,7 +37,7 @@ Microstrain::Microstrain() :
 	ahrs_checksum_error_packet_count_(0),
 	imu_frame_id_("imu_frame"),
 	publish_cf_(true),
-	publish_ekf_(true)
+	tf_ned_to_enu_(true)
 {
 	// pass
 }
@@ -160,26 +160,21 @@ void Microstrain::run()
 	private_nh.param("declination",declination,0.23);
 	private_nh.param("imu_frame_id",imu_frame_id_, std::string("imu_link"));
 	private_nh.param("publish_cf",publish_cf_, true);
-	private_nh.param("publish_ekf",publish_ekf_, true);
 	private_nh.param("publish_rpy",publish_rpy_,true);
 	private_nh.param("publish_mag_data",publish_mag_,true);
-
+	private_nh.param("tf_ned_to_enu",tf_ned_to_enu_,true);
 
 	// ROS publishers and subscribers
 	status_pub_ = node.advertise<std_msgs::Int16MultiArray>("imu/status",100);
+	ekf_pub_ = node.advertise<sensor_msgs::Imu>("imu/data",100);
+	if (publish_rpy_)
+		ekf_rpy_pub_ = node.advertise<geometry_msgs::Vector3Stamped>("imu/rpy",100);
 
 	if (publish_cf_)
 	{
 		cf_pub_ = node.advertise<sensor_msgs::Imu>("imu/cf/data",100);
 		if (publish_rpy_)
 			cf_rpy_pub_ = node.advertise<geometry_msgs::Vector3Stamped>("imu/cf/rpy",100);
-	}
-
-	if (publish_ekf_)
-	{
-		ekf_pub_ = node.advertise<sensor_msgs::Imu>("imu/ekf/data",100);
-		if (publish_rpy_)
-			ekf_rpy_pub_ = node.advertise<geometry_msgs::Vector3Stamped>("imu/ekf/rpy",100);
 	}
 
 	if (publish_mag_)
@@ -329,7 +324,6 @@ void Microstrain::run()
 		//////////////////////////////
 		// Filter Setup - EKF Estimate
 		//////////////////////////////
-		if (publish_ekf_) {
 			//Get base rate
 			while(mip_3dm_cmd_get_filter_base_rate(&device_interface_, &base_rate) != MIP_INTERFACE_OK) {}
 			ROS_INFO("Filter (EKF) Base Rate => %d Hz", base_rate);
@@ -455,7 +449,7 @@ void Microstrain::run()
 				                                NULL)!= MIP_INTERFACE_OK) {}
 				ros::Duration(dT).sleep();
 			}
-		} // end of Filter setup
+		// end of Filter setup
 
 
 		// I believe the auto-init pertains to the kalman filter for the -45
@@ -506,18 +500,18 @@ void Microstrain::run()
 		// Enable Data streams
 		//////////////////////
 		dT = 0.25;
+			ROS_INFO("Enabling Filter (EKF Estimate) stream");
+			enable = 0x01;
+			while(mip_3dm_cmd_continuous_data_stream(&device_interface_, MIP_FUNCTION_SELECTOR_WRITE, MIP_3DM_INS_DATASTREAM, &enable) != MIP_INTERFACE_OK) {}
+			ros::Duration(dT).sleep();
+
 		if (publish_cf_) {
 			ROS_INFO("Enabling AHRS (Complementary Filter) stream");
 			enable = 0x01;
 			while(mip_3dm_cmd_continuous_data_stream(&device_interface_, MIP_FUNCTION_SELECTOR_WRITE, MIP_3DM_AHRS_DATASTREAM, &enable) != MIP_INTERFACE_OK) {}
 			ros::Duration(dT).sleep();
 		}
-		if (publish_ekf_) {
-			ROS_INFO("Enabling Filter (EKF Estimate) stream");
-			enable = 0x01;
-			while(mip_3dm_cmd_continuous_data_stream(&device_interface_, MIP_FUNCTION_SELECTOR_WRITE, MIP_3DM_INS_DATASTREAM, &enable) != MIP_INTERFACE_OK) {}
-			ros::Duration(dT).sleep();
-		}
+
 
 		ROS_INFO("End of device setup - starting streaming");
 	}
@@ -534,15 +528,12 @@ void Microstrain::run()
 	// Loop
 	// Determine loop rate as 2*(max update rate), but abs. max of 1kHz
 	int max_rate = 1;
+	max_rate = std::max(max_rate,ekf_rate_);
 	if (publish_cf_)
 	{
 		max_rate = std::max(max_rate,cf_rate_);
 	}
 
-	if (publish_ekf_)
-	{
-		max_rate = std::max(max_rate,ekf_rate_);
-	}
 
 	int spin_rate = std::min(3*max_rate,1000);
 
@@ -581,8 +572,7 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 	u16 field_offset = 0;
 
 	// If we aren't publishing, then return
-	if (!publish_ekf_)
-		return;
+
 
 	//The packet callback can have several types, process them all
 	switch(callback_type)
@@ -622,10 +612,18 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 				ekf_imu_msg_.header.seq = filter_valid_packet_count_;
 				ekf_imu_msg_.header.stamp = ros::Time::now();
 				ekf_imu_msg_.header.frame_id = imu_frame_id_;
-				ekf_imu_msg_.linear_acceleration.x =  curr_filter_accel_.y;
-				ekf_imu_msg_.linear_acceleration.y = curr_filter_accel_.x;
-				ekf_imu_msg_.linear_acceleration.z = -curr_filter_accel_.z;
-
+				if (tf_ned_to_enu_)
+				{
+					ekf_imu_msg_.linear_acceleration.x = curr_filter_accel_.y;
+					ekf_imu_msg_.linear_acceleration.y = curr_filter_accel_.x;
+					ekf_imu_msg_.linear_acceleration.z = -curr_filter_accel_.z;
+				}
+				else
+				{
+					ekf_imu_msg_.linear_acceleration.x = curr_filter_accel_.x;
+					ekf_imu_msg_.linear_acceleration.y = curr_filter_accel_.y;
+					ekf_imu_msg_.linear_acceleration.z = curr_filter_accel_.z;
+				}
 				ekf_rpy_msg_.header.seq = filter_valid_packet_count_;
 				ekf_rpy_msg_.header.stamp = ros::Time::now();
 				ekf_rpy_msg_.header.frame_id = imu_frame_id_;
@@ -642,11 +640,18 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 				//For little-endian targets, byteswap the data field
 				mip_filter_attitude_euler_angles_byteswap(&curr_filter_angles_);
 
-				// put into ENU
-				ekf_rpy_msg_.vector.x = curr_filter_angles_.pitch;//Roll in ENU = Pitch in NED
-				ekf_rpy_msg_.vector.y = curr_filter_angles_.roll; //Pitch in ENU = Roll in NED
-				ekf_rpy_msg_.vector.z = -curr_filter_angles_.yaw; //Yaw in ENU = -Yaw in NED
-
+				if (tf_ned_to_enu_)
+				{
+					ekf_rpy_msg_.vector.x = curr_filter_angles_.pitch;//Roll in ENU = Pitch in NED
+					ekf_rpy_msg_.vector.y = curr_filter_angles_.roll; //Pitch in ENU = Roll in NED
+					ekf_rpy_msg_.vector.z = -curr_filter_angles_.yaw; //Yaw in ENU = -Yaw in NED
+				}
+				else
+				{
+					ekf_rpy_msg_.vector.x = curr_filter_angles_.roll;
+					ekf_rpy_msg_.vector.y = curr_filter_angles_.pitch;
+					ekf_rpy_msg_.vector.z = curr_filter_angles_.yaw;
+				}
 			} break;
 
 			//////////////////////////////////////////////////////////////
@@ -659,11 +664,20 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 				//For little-endian targets, byteswap the data field
 				mip_filter_attitude_quaternion_byteswap(&curr_filter_quaternion_);
 
-				// put into ENU
-				ekf_imu_msg_.orientation.x = curr_filter_quaternion_.q[2];
-				ekf_imu_msg_.orientation.y = curr_filter_quaternion_.q[1];
-				ekf_imu_msg_.orientation.z = -1.0*curr_filter_quaternion_.q[3];
-				ekf_imu_msg_.orientation.w = curr_filter_quaternion_.q[0];
+				if (tf_ned_to_enu_)
+				{
+					ekf_imu_msg_.orientation.x = curr_filter_quaternion_.q[2];
+					ekf_imu_msg_.orientation.y = curr_filter_quaternion_.q[1];
+					ekf_imu_msg_.orientation.z = -1.0*curr_filter_quaternion_.q[3];
+					ekf_imu_msg_.orientation.w = curr_filter_quaternion_.q[0];
+				}
+				else
+				{
+					ekf_imu_msg_.orientation.x = curr_filter_quaternion_.q[1];
+					ekf_imu_msg_.orientation.y = curr_filter_quaternion_.q[2];
+					ekf_imu_msg_.orientation.z = curr_filter_quaternion_.q[3];
+					ekf_imu_msg_.orientation.w = curr_filter_quaternion_.q[0];
+				}
 
 			} break;
 
@@ -677,9 +691,18 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 				//For little-endian targets, byteswap the data field
 				mip_filter_compensated_angular_rate_byteswap(&curr_filter_angular_rate_);
 
-				ekf_imu_msg_.angular_velocity.x = curr_filter_angular_rate_.y;
-				ekf_imu_msg_.angular_velocity.y = curr_filter_angular_rate_.x;
-				ekf_imu_msg_.angular_velocity.z = -curr_filter_angular_rate_.z;
+				if (tf_ned_to_enu_)
+				{
+					ekf_imu_msg_.angular_velocity.x = curr_filter_angular_rate_.y;
+					ekf_imu_msg_.angular_velocity.y = curr_filter_angular_rate_.x;
+					ekf_imu_msg_.angular_velocity.z = -curr_filter_angular_rate_.z;
+				}
+				else
+				{
+					ekf_imu_msg_.angular_velocity.x = curr_filter_angular_rate_.x;
+					ekf_imu_msg_.angular_velocity.y = curr_filter_angular_rate_.y;
+					ekf_imu_msg_.angular_velocity.z = curr_filter_angular_rate_.z;
+				}
 
 			} break;
 
@@ -692,12 +715,18 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 
 				//For little-endian targets, byteswap the data field
 				mip_filter_euler_attitude_uncertainty_byteswap(&curr_filter_att_uncertainty_);
-
-				ekf_imu_msg_.orientation_covariance[0] = curr_filter_att_uncertainty_.pitch*curr_filter_att_uncertainty_.pitch;
-				ekf_imu_msg_.orientation_covariance[4] = curr_filter_att_uncertainty_.roll*curr_filter_att_uncertainty_.roll;
-				ekf_imu_msg_.orientation_covariance[8] = curr_filter_att_uncertainty_.yaw*curr_filter_att_uncertainty_.yaw;
-
-
+				if (tf_ned_to_enu_)
+				{
+					ekf_imu_msg_.orientation_covariance[0] = curr_filter_att_uncertainty_.pitch*curr_filter_att_uncertainty_.pitch;
+					ekf_imu_msg_.orientation_covariance[4] = curr_filter_att_uncertainty_.roll*curr_filter_att_uncertainty_.roll;
+					ekf_imu_msg_.orientation_covariance[8] = curr_filter_att_uncertainty_.yaw*curr_filter_att_uncertainty_.yaw;
+				}
+				else
+				{
+					ekf_imu_msg_.orientation_covariance[0] = curr_filter_att_uncertainty_.roll*curr_filter_att_uncertainty_.roll;
+					ekf_imu_msg_.orientation_covariance[4] = curr_filter_att_uncertainty_.pitch*curr_filter_att_uncertainty_.pitch;
+					ekf_imu_msg_.orientation_covariance[8] = curr_filter_att_uncertainty_.yaw*curr_filter_att_uncertainty_.yaw;
+				}
 			} break;
 
 
@@ -711,9 +740,9 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 				//For little-endian targets, byteswap the data field
 				mip_filter_quaternion_attitude_uncertainty_byteswap(&curr_filter_quat_uncertainty_);
 
-				ekf_imu_msg_.orientation_covariance[1] = curr_filter_quat_uncertainty_.q2*curr_filter_quat_uncertainty_.q2;
-				ekf_imu_msg_.orientation_covariance[5] = curr_filter_quat_uncertainty_.q1*curr_filter_quat_uncertainty_.q1;
-				ekf_imu_msg_.orientation_covariance[7] = curr_filter_quat_uncertainty_.q3*curr_filter_quat_uncertainty_.q3;
+				//ekf_imu_msg_.orientation_covariance[1] = curr_filter_quat_uncertainty_.q2*curr_filter_quat_uncertainty_.q2;
+				//ekf_imu_msg_.orientation_covariance[5] = curr_filter_quat_uncertainty_.q1*curr_filter_quat_uncertainty_.q1;
+				//ekf_imu_msg_.orientation_covariance[7] = curr_filter_quat_uncertainty_.q3*curr_filter_quat_uncertainty_.q3;
 
 			} break;
 
@@ -825,14 +854,21 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 				cf_imu_msg_.header.seq = ahrs_valid_packet_count_;
 				cf_imu_msg_.header.stamp = ros::Time::now();
 				cf_imu_msg_.header.frame_id = imu_frame_id_;
-				cf_imu_msg_.linear_acceleration.x =  9.81*curr_ahrs_accel_.scaled_accel[1];                                                                                                                                                                                                                                //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[0];
-				cf_imu_msg_.linear_acceleration.y = 9.81*curr_ahrs_accel_.scaled_accel[0];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[1];
-				cf_imu_msg_.linear_acceleration.z = -9.81*curr_ahrs_accel_.scaled_accel[2];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[2];
-
+				if (tf_ned_to_enu_)
+				{
+					cf_imu_msg_.linear_acceleration.x =  9.81*curr_ahrs_accel_.scaled_accel[1];                                                                                                                                                                                                                                //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[0];
+					cf_imu_msg_.linear_acceleration.y = 9.81*curr_ahrs_accel_.scaled_accel[0];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[1];
+					cf_imu_msg_.linear_acceleration.z = -9.81*curr_ahrs_accel_.scaled_accel[2];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[2];
+				}
+				else
+				{
+					cf_imu_msg_.linear_acceleration.x =  9.81*curr_ahrs_accel_.scaled_accel[0];                                                                                                                                                                                                                                //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[0];
+					cf_imu_msg_.linear_acceleration.y = 9.81*curr_ahrs_accel_.scaled_accel[1];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[1];
+					cf_imu_msg_.linear_acceleration.z = 9.81*curr_ahrs_accel_.scaled_accel[2];
+				}
 				mag_msg_.header.seq = ahrs_valid_packet_count_;                                                                                                                                                                                                                                 //SJP Added
 				mag_msg_.header.stamp = ros::Time::now();                                                                                                                                                                                                                                 //SJP Added
-				mag_msg_.header.frame_id = imu_frame_id_;                                                                                                                                                                                                                                 //SJP Added
-
+				mag_msg_.header.frame_id = imu_frame_id_;
 				cf_rpy_msg_.header.seq = ahrs_valid_packet_count_;                                                                                                                                                                                                                                 //SJP Added
 				cf_rpy_msg_.header.stamp = ros::Time::now();                                                                                                                                                                                                                                 //SJP Added
 				cf_rpy_msg_.header.frame_id = imu_frame_id_;                                                                                                                                                                                                                                 //SJP Added
@@ -849,11 +885,18 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 
 				//For little-endian targets, byteswap the data field
 				mip_ahrs_scaled_gyro_byteswap(&curr_ahrs_gyro_);
-
+			if (tf_ned_to_enu_)
+			{
 				cf_imu_msg_.angular_velocity.x = curr_ahrs_gyro_.scaled_gyro[1];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[0];
 				cf_imu_msg_.angular_velocity.y = curr_ahrs_gyro_.scaled_gyro[0];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[1];
 				cf_imu_msg_.angular_velocity.z = -curr_ahrs_gyro_.scaled_gyro[2];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[2];
-
+			}
+			else
+			{
+				cf_imu_msg_.angular_velocity.x = curr_ahrs_gyro_.scaled_gyro[0];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[0];
+				cf_imu_msg_.angular_velocity.y = curr_ahrs_gyro_.scaled_gyro[1];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[1];
+				cf_imu_msg_.angular_velocity.z = curr_ahrs_gyro_.scaled_gyro[2];
+			}
 			} break;
 
 			///
@@ -866,11 +909,18 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 
 				//For little-endian targets, byteswap the data field
 				mip_ahrs_scaled_mag_byteswap(&curr_ahrs_mag_);
-
+			if (tf_ned_to_enu_)
+			{
 				mag_msg_.magnetic_field.x = curr_ahrs_mag_.scaled_mag[1];                                                                                                                                                                                                                                 //SJP Added (ENU x = NED y)
 				mag_msg_.magnetic_field.y = curr_ahrs_mag_.scaled_mag[0];                                                                                                                                                                                                                                 //SJP Added (ENU y = NED x)
 				mag_msg_.magnetic_field.z = -curr_ahrs_mag_.scaled_mag[2];                                                                                                                                                                                                                                 //SJP Added (ENU z = -NED z)
-
+			}
+			else
+			{
+				mag_msg_.magnetic_field.x = curr_ahrs_mag_.scaled_mag[0];                                                                                                                                                                                                                                 //SJP Added (ENU x = NED y)
+				mag_msg_.magnetic_field.y = curr_ahrs_mag_.scaled_mag[1];                                                                                                                                                                                                                                 //SJP Added (ENU y = NED x)
+				mag_msg_.magnetic_field.z = curr_ahrs_mag_.scaled_mag[2];
+			}
 			} break;
 
 			// Quaternion
@@ -880,26 +930,41 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 
 				//For little-endian targets, byteswap the data field
 				mip_ahrs_quaternion_byteswap(&curr_ahrs_quaternion_);
-				// put into ENU - swap X/Y, invert Z
+			if (tf_ned_to_enu_)
+			{
 				cf_imu_msg_.orientation.x = curr_ahrs_quaternion_.q[2];
 				cf_imu_msg_.orientation.y = curr_ahrs_quaternion_.q[1];
 				cf_imu_msg_.orientation.z = -curr_ahrs_quaternion_.q[3];
 				cf_imu_msg_.orientation.w = curr_ahrs_quaternion_.q[0];
-
+			}
+			else
+			{
+				cf_imu_msg_.orientation.x = curr_ahrs_quaternion_.q[1];
+				cf_imu_msg_.orientation.y = curr_ahrs_quaternion_.q[2];
+				cf_imu_msg_.orientation.z = curr_ahrs_quaternion_.q[3];
+				cf_imu_msg_.orientation.w = curr_ahrs_quaternion_.q[0];
+			}
 			} break;
 
-			// Euler Angles --SJP ADDED
+
 			case MIP_AHRS_DATA_EULER_ANGLES:
 			{
 				memcpy(&curr_ahrs_euler_angles_, field_data, sizeof(mip_ahrs_euler_angles));
 
 				//For little-endian targets, byteswap the data field
 				mip_ahrs_euler_angles_byteswap(&curr_ahrs_euler_angles_);
-				// put into ENU
+			if (tf_ned_to_enu_)
+			{
 				cf_rpy_msg_.vector.x = curr_ahrs_euler_angles_.pitch;                                                                                                                                                                                                                                //Roll in ENU = Pitch in NED
 				cf_rpy_msg_.vector.y = curr_ahrs_euler_angles_.roll;                                                                                                                                                                                                                                //Pitch in ENU = Roll in NED
 				cf_rpy_msg_.vector.z = -curr_ahrs_euler_angles_.yaw;                                                                                                                                                                                                                                 //Yaw in ENU = -Yaw in NED
-
+			}
+			else
+			{
+				cf_rpy_msg_.vector.x = curr_ahrs_euler_angles_.roll;                                                                                                                                                                                                                                //Roll in ENU = Pitch in NED
+				cf_rpy_msg_.vector.y = curr_ahrs_euler_angles_.pitch;                                                                                                                                                                                                                                //Pitch in ENU = Roll in NED
+				cf_rpy_msg_.vector.z = curr_ahrs_euler_angles_.yaw;
+			}
 			} break;
 
 			default: break;
