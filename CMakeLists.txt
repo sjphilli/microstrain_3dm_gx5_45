@@ -25,7 +25,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  INCLUDE_DIRS 
+  INCLUDE_DIRS
     include
   CATKIN_DEPENDS
     roscpp
@@ -54,33 +54,33 @@ set(MIPUTILSRC MIPSDK/C/Utilities/Source)
 # contains both .c and .h files
 # set(MIPUSR "MIPSDK/C/Library/User\ Functions")
 #include_directories(include ${MIPLIBINC} ${MIPUTILINC} ${MIPUSR})
-include_directories(include/${PROJECT_NAME} ${MIPLIBINC} ${MIPUTILINC} ${catkin_INCLUDE_DIRS})
+include_directories(include/${PROJECT_NAME} include/microstrain_3dm_gx5_25 ${MIPLIBINC} ${MIPUTILINC} ${catkin_INCLUDE_DIRS})
 
 set(MIPINC
   ${MIPLIBINC}/mip.h
-  ${MIPLIBINC}/mip_sdk_base.h    
+  ${MIPLIBINC}/mip_sdk_base.h
   ${MIPLIBINC}/mip_sdk_inteface.h
-  ${MIPLIBINC}/mip_sdk_3dm.h   
-  ${MIPLIBINC}/mip_sdk_filter.h  
+  ${MIPLIBINC}/mip_sdk_3dm.h
+  ${MIPLIBINC}/mip_sdk_filter.h
   ${MIPLIBINC}/mip_sdk_system.h
-  ${MIPLIBINC}/mip_sdk_ahrs.h  
-  ${MIPLIBINC}/mip_sdk_gps.h     
+  ${MIPLIBINC}/mip_sdk_ahrs.h
+  ${MIPLIBINC}/mip_sdk_gps.h
   ${MIPLIBINC}/ring_buffer.h
 #  ${MIPUSR}/mip_sdk_user_functions.h
   ${MIPUTILINC}/byteswap_utilities.h
 )
 
-set(MIPSRC 
+set(MIPSRC
   ${MIPLIBSRC}/mip.c
-  ${MIPLIBSRC}/mip_sdk_base.c    
+  ${MIPLIBSRC}/mip_sdk_base.c
   ${MIPLIBSRC}/mip_sdk_inteface.c
-  ${MIPLIBSRC}/mip_sdk_3dm.c   
-  ${MIPLIBSRC}/mip_sdk_filter.c  
+  ${MIPLIBSRC}/mip_sdk_3dm.c
+  ${MIPLIBSRC}/mip_sdk_filter.c
   ${MIPLIBSRC}/mip_sdk_system.c
-  ${MIPLIBSRC}/mip_sdk_ahrs.c  
-  ${MIPLIBSRC}/mip_sdk_gps.c     
+  ${MIPLIBSRC}/mip_sdk_ahrs.c
+  ${MIPLIBSRC}/mip_sdk_gps.c
   ${MIPLIBSRC}/ring_buffer.c
-#  ${MIPUSR}/mip_sdk_user_functions.c  
+#  ${MIPUSR}/mip_sdk_user_functions.c
   ${MIPUTILSRC}/byteswap_utilities.c
 )
 
@@ -88,30 +88,42 @@ set(MIPSRC
 add_library(microstrain_3dm_gx5_45
   src/microstrain_3dm_gx5_45.cpp
   src/mip_sdk_user_functions.c
-  ${MIPSRC} 
+  ${MIPSRC}
 )
-
+add_library(microstrain_3dm_gx5_25
+  src/microstrain_3dm_gx5_25.cpp
+  src/mip_sdk_user_functions.c
+  ${MIPSRC}
+)
 # Executables
 add_executable(GX4-45_Test
   src/GX4-45_Test.c
   src/mip_sdk_user_functions.c
-  ${MIPSRC} 
+  ${MIPSRC}
 )
 add_executable(microstrain_3dm_gx5_45_node
   src/microstrain_3dm_gx5_45_node.cpp
 )
-
+add_executable(microstrain_3dm_gx5_25_node
+  src/microstrain_3dm_gx5_25_node.cpp
+)
 # Linking
 target_link_libraries(GX4-45_Test rt)
 
-target_link_libraries(microstrain_3dm_gx5_45 
+target_link_libraries(microstrain_3dm_gx5_45
   ${catkin_LIBRARIES}
 )
-target_link_libraries(microstrain_3dm_gx5_45_node 
+target_link_libraries(microstrain_3dm_gx5_45_node
   microstrain_3dm_gx5_45
   ${catkin_LIBRARIES}
 )
-
+target_link_libraries(microstrain_3dm_gx5_25
+  ${catkin_LIBRARIES}
+)
+target_link_libraries(microstrain_3dm_gx5_25_node
+  microstrain_3dm_gx5_25
+  ${catkin_LIBRARIES}
+)
 #############
 ## Install ##
 #############

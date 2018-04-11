@@ -36,7 +36,9 @@ Microstrain::Microstrain() :
 	filter_checksum_error_packet_count_(0),
 	ahrs_checksum_error_packet_count_(0),
 	imu_frame_id_("imu_frame"),
-	publish_cf_(true),
+	publish_cf_(false),
+	publish_rpy_(false),
+	publish_mag_(false),
 	tf_ned_to_enu_(true)
 {
 	// pass
@@ -159,9 +161,9 @@ void Microstrain::run()
 
 	private_nh.param("declination",declination,0.23);
 	private_nh.param("imu_frame_id",imu_frame_id_, std::string("imu_link"));
-	private_nh.param("publish_cf",publish_cf_, true);
-	private_nh.param("publish_rpy",publish_rpy_,true);
-	private_nh.param("publish_mag_data",publish_mag_,true);
+	private_nh.param("publish_cf",publish_cf_, false);
+	private_nh.param("publish_rpy",publish_rpy_,false);
+	private_nh.param("publish_mag",publish_mag_,false);
 	private_nh.param("tf_ned_to_enu",tf_ned_to_enu_,true);
 
 	// ROS publishers and subscribers
@@ -248,7 +250,7 @@ void Microstrain::run()
 		////////////////////////////////////
 		// AHRS Setup - Complementary Filter
 		////////////////////////////////////
-		if (publish_cf_) {
+		if (publish_cf_ | publish_mag_) {
 			// Get base rate
 			while(mip_3dm_cmd_get_ahrs_base_rate(&device_interface_, &base_rate) != MIP_INTERFACE_OK) {}
 			ROS_INFO("AHRS Base Rate => %d Hz", base_rate);
@@ -505,7 +507,7 @@ void Microstrain::run()
 			while(mip_3dm_cmd_continuous_data_stream(&device_interface_, MIP_FUNCTION_SELECTOR_WRITE, MIP_3DM_INS_DATASTREAM, &enable) != MIP_INTERFACE_OK) {}
 			ros::Duration(dT).sleep();
 
-		if (publish_cf_) {
+		if (publish_cf_ | publish_mag_) {
 			ROS_INFO("Enabling AHRS (Complementary Filter) stream");
 			enable = 0x01;
 			while(mip_3dm_cmd_continuous_data_stream(&device_interface_, MIP_FUNCTION_SELECTOR_WRITE, MIP_3DM_AHRS_DATASTREAM, &enable) != MIP_INTERFACE_OK) {}
@@ -529,7 +531,7 @@ void Microstrain::run()
 	// Determine loop rate as 2*(max update rate), but abs. max of 1kHz
 	int max_rate = 1;
 	max_rate = std::max(max_rate,ekf_rate_);
-	if (publish_cf_)
+	if (publish_cf_ | publish_mag_)
 	{
 		max_rate = std::max(max_rate,cf_rate_);
 	}
@@ -771,7 +773,8 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 		}
 		// Publish
 		ekf_pub_.publish(ekf_imu_msg_);
-		ekf_rpy_pub_.publish(ekf_rpy_msg_);
+		if(publish_rpy_)
+			ekf_rpy_pub_.publish(ekf_rpy_msg_);
 
 	} break;
 
@@ -812,7 +815,7 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 	u8               *field_data;
 	u16 field_offset = 0;
 	// If we aren't publishing, then return
-	if (!publish_cf_)
+	if (!publish_cf_ && !publish_mag_)
 		return;
 	//The packet callback can have several types, process them all
 	switch(callback_type)
@@ -972,9 +975,14 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 		}
 
 		// Publish
-		cf_pub_.publish(cf_imu_msg_);
-		cf_rpy_pub_.publish(cf_rpy_msg_);
-		mag_pub_.publish(mag_msg_);
+		if(publish_cf_)
+		{
+			cf_pub_.publish(cf_imu_msg_);
+			if(publish_rpy_)
+				cf_rpy_pub_.publish(cf_rpy_msg_);
+		}
+		if(publish_mag_)
+			mag_pub_.publish(mag_msg_);
 
 
 	} break;
