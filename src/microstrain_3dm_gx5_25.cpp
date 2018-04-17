@@ -616,9 +616,9 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 				ekf_imu_msg_.header.frame_id = imu_frame_id_;
 				if (tf_ned_to_enu_)
 				{
-					ekf_imu_msg_.linear_acceleration.x = curr_filter_accel_.y;
-					ekf_imu_msg_.linear_acceleration.y = curr_filter_accel_.x;
-					ekf_imu_msg_.linear_acceleration.z = -curr_filter_accel_.z;
+					ekf_imu_msg_.linear_acceleration.x = curr_filter_accel_.x;
+					ekf_imu_msg_.linear_acceleration.y = curr_filter_accel_.y;
+					ekf_imu_msg_.linear_acceleration.z = curr_filter_accel_.z;
 				}
 				else
 				{
@@ -695,8 +695,8 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 
 				if (tf_ned_to_enu_)
 				{
-					ekf_imu_msg_.angular_velocity.x = curr_filter_angular_rate_.y;
-					ekf_imu_msg_.angular_velocity.y = curr_filter_angular_rate_.x;
+					ekf_imu_msg_.angular_velocity.x = curr_filter_angular_rate_.x;
+					ekf_imu_msg_.angular_velocity.y = curr_filter_angular_rate_.y;
 					ekf_imu_msg_.angular_velocity.z = -curr_filter_angular_rate_.z;
 				}
 				else
@@ -859,9 +859,9 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 				cf_imu_msg_.header.frame_id = imu_frame_id_;
 				if (tf_ned_to_enu_)
 				{
-					cf_imu_msg_.linear_acceleration.x =  9.81*curr_ahrs_accel_.scaled_accel[1];                                                                                                                                                                                                                                //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[0];
-					cf_imu_msg_.linear_acceleration.y = 9.81*curr_ahrs_accel_.scaled_accel[0];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[1];
-					cf_imu_msg_.linear_acceleration.z = -9.81*curr_ahrs_accel_.scaled_accel[2];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[2];
+					cf_imu_msg_.linear_acceleration.x =  9.81*curr_ahrs_accel_.scaled_accel[0];                                                                                                                                                                                                                                //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[0];
+					cf_imu_msg_.linear_acceleration.y = 9.81*curr_ahrs_accel_.scaled_accel[1];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[1];
+					cf_imu_msg_.linear_acceleration.z = 9.81*curr_ahrs_accel_.scaled_accel[2];                                                                                                                                                                                                                                 //SJP Modified from 9.81*curr_ahrs_accel_.scaled_accel[2];
 				}
 				else
 				{
@@ -890,8 +890,8 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 				mip_ahrs_scaled_gyro_byteswap(&curr_ahrs_gyro_);
 			if (tf_ned_to_enu_)
 			{
-				cf_imu_msg_.angular_velocity.x = curr_ahrs_gyro_.scaled_gyro[1];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[0];
-				cf_imu_msg_.angular_velocity.y = curr_ahrs_gyro_.scaled_gyro[0];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[1];
+				cf_imu_msg_.angular_velocity.x = curr_ahrs_gyro_.scaled_gyro[0];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[0];
+				cf_imu_msg_.angular_velocity.y = curr_ahrs_gyro_.scaled_gyro[1];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[1];
 				cf_imu_msg_.angular_velocity.z = -curr_ahrs_gyro_.scaled_gyro[2];                                                                                                                                                                                                                                //SJP Modified from curr_ahrs_gyro_.scaled_gyro[2];
 			}
 			else
@@ -914,8 +914,8 @@ void Microstrain::ahrs_packet_callback(void *user_ptr, u8 *packet, u16 packet_si
 				mip_ahrs_scaled_mag_byteswap(&curr_ahrs_mag_);
 			if (tf_ned_to_enu_)
 			{
-				mag_msg_.magnetic_field.x = curr_ahrs_mag_.scaled_mag[1];                                                                                                                                                                                                                                 //SJP Added (ENU x = NED y)
-				mag_msg_.magnetic_field.y = curr_ahrs_mag_.scaled_mag[0];                                                                                                                                                                                                                                 //SJP Added (ENU y = NED x)
+				mag_msg_.magnetic_field.x = curr_ahrs_mag_.scaled_mag[0];                                                                                                                                                                                                                                 //SJP Added (ENU x = NED y)
+				mag_msg_.magnetic_field.y = curr_ahrs_mag_.scaled_mag[1];                                                                                                                                                                                                                                 //SJP Added (ENU y = NED x)
 				mag_msg_.magnetic_field.z = -curr_ahrs_mag_.scaled_mag[2];                                                                                                                                                                                                                                 //SJP Added (ENU z = -NED z)
 			}
 			else
