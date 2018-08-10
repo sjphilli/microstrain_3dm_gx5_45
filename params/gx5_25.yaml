@@ -1,4 +1,4 @@
-port: /dev/ttyACM0
+port: /dev/microstrain
 baudrate: 115200
 device_setup: true
 readback_settings: true
