@@ -1,8 +1,8 @@
-port: /dev/microstrain
+port: /dev/ttyACM0
 baudrate: 115200
 device_setup: true
 readback_settings: true
-save_settings: true
+save_settings: false
 
 # Orientation settings
 tf_ned_to_enu: true
@@ -22,8 +22,9 @@ ekf_rate: 100
 dynamics_mode: 1
 
 # Declination source
+# If using 2 make sure to set the lat long data for the world model.
 # Declination source 1=None, 2=magnetic, 3=manual
-declination_source: 2
+declination_source: 3
 
 # Declination value, set to your magnetic declination
 declination: -0.072139694

@@ -34,6 +34,10 @@ XmlRpc::XmlRpcValue rpc_temp;
 // Temporary vector used to read from param server
 std::vector<double> temp;
 
+// Boolean used so we don't publish until all is initilized
+bool initilized = false;
+bool solution_valid = false; //<-- If the EKF solution is not valid, don't publish
+
 namespace Microstrain
 {
 
@@ -666,6 +670,15 @@ void Microstrain::run()
 
 	ROS_INFO("Setting spin rate to <%d>",spin_rate);
 	ros::Rate r(spin_rate);// Rate in Hz
+
+	//Update the parser (this function reads the port and parses the bytes
+	mip_interface_update(&device_interface_);
+	ros::spinOnce();// Spin once to clear the buffer
+	r.sleep();
+    // Device is initilized, we can set publishing to true
+    initilized = true;
+	ros::Duration(dT).sleep();
+
 	while (ros::ok())
 	{
 		//Update the parser (this function reads the port and parses the bytes
@@ -925,15 +938,33 @@ void Microstrain::filter_packet_callback(void *user_ptr, u8 *packet, u16 packet_
 				    status_msg_.data.push_back(curr_filter_status_.status_flags);
 				    status_pub_.publish(status_msg_);
 
+                    if(curr_filter_status_.filter_state == 2 && initilized)
+                    {
+                        solution_valid = true;
+                    }
+                    else if(initilized)// We are initized but unstable
+                    { 
+                        ROS_WARN_THROTTLE(1.0, "IMU Filter unstable... Filter Status: %#06X, Dyn. Mode: %#06X, Filter State: %#06X",
+				    	                  curr_filter_status_.filter_state,
+				    	                  curr_filter_status_.dynamics_mode,
+				    	                  curr_filter_status_.status_flags);
+                    }
+
 			    } break;
 
 			    default: break;
 			    }
 		    }
-		    // Publish
-		    ekf_pub_.publish(ekf_imu_msg_);
-		    if(publish_rpy_)
-			    ekf_rpy_pub_.publish(ekf_rpy_msg_);
+
+            if(solution_valid)//Internal sensor EKF solution
+            {
+		        // Publish
+		        ekf_pub_.publish(ekf_imu_msg_);
+		        if(publish_rpy_)
+                {
+			        ekf_rpy_pub_.publish(ekf_rpy_msg_);
+                }
+            }
 
 	    } break;
 
